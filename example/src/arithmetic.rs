@@ -4,13 +4,13 @@ pub mod grammar {
     #[derive(PartialEq, Eq, Debug)]
     pub enum Expression {
         Number(#[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())] i32),
-        #[rust_sitter::prec_left(1)]
+        #[rust_sitter::prec(left,1)]
         Sub(
             Box<Expression>,
             #[rust_sitter::leaf(text = "-")] (),
             Box<Expression>,
         ),
-        #[rust_sitter::prec_left(2)]
+        #[rust_sitter::prec(left,2)]
         Mul(
             Box<Expression>,
             #[rust_sitter::leaf(text = "*")] (),

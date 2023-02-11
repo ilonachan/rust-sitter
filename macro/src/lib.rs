@@ -21,6 +21,41 @@ pub fn language(
     item
 }
 
+
+#[proc_macro_attribute]
+/// Marks an extra node that may appear anywhere in the language.
+/// This can be used to, for example, accept whitespace and comments.
+///
+/// ## Example
+/// ```ignore
+/// #[rust_sitter::extra]
+/// pub struct Whitespace {
+///     ...
+/// }
+/// ```
+pub fn extra(
+    _attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
+/// Marks the specified field as a Tree Sitter [word](https://tree-sitter.github.io/tree-sitter/creating-parsers#keywords),
+/// which is useful when handling errors involving keywords. Only one field in the grammar can be marked as a word.
+///
+/// ## Example
+/// ```ignore
+/// #[rust_sitter::word]
+/// Identifier(...)
+/// ```
+pub fn word(
+    _attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    item
+}
+
 #[proc_macro_attribute]
 /// This annotation marks a node as extra, which can safely be skipped while parsing.
 /// This is useful for handling whitespace/newlines/comments.
@@ -75,6 +110,8 @@ pub fn extra(
 /// }
 /// ```
 ///
+// TODO: how does this play together with the `token` directive from tree-sitter?
+// TODO: where do immediate tokens fit in?
 pub fn leaf(
     _attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
@@ -103,16 +140,29 @@ pub fn skip(
 }
 
 #[proc_macro_attribute]
-/// Defines a precedence level for a non-terminal that has no associativity.
+/// Defines a precedence level for a non-terminal, and optionally the associativity to be used
+/// when conflicts arise.
 ///
-/// This annotation takes a single, unnamed parameter, which specifies the precedence level.
+/// This annotation can take a single unnamed parameter, which specifies the precedence level.
 /// This is used to resolve conflicts with other non-terminals, so that the one with the higher
 /// precedence will bind more tightly (appear lower in the parse tree).
 ///
+/// The annotation can also take the named parameter `assoc` with possible values `left` | `right` | `dynamic`.
+/// This is used to resolve conflicts of the same terminal matching in intersecting ways, by prefering
+/// one matching direction over the other.
+///
+/// An example of left-associativity is subtraction: we expect `1 - 2 - 3` to be parsed as `(1 - 2) - 3`. For
+/// right-associativity, an example might be exponentiation (possibly). Dynamic associativity refers to a
+/// precedence resolution algorithm described by [Tree-Sitter](https://tree-sitter.github.io/tree-sitter/creating-parsers#the-grammar-dsl)
+/// and [Bison docs](https://www.gnu.org/software/bison/manual/html_node/Generalized-LR-Parsing.html).
+///
+/// If left- or right-associativity is specified, the precedence can be omitted. In that case the default value
+/// of 0 is used. However, it usually makes sense to specify a precedence anyway, to avoid conflicts between different terminals.
+///
 /// ## Example
 /// ```ignore
-/// #[rust_sitter::prec(1)]
-/// PriorityExpr(Box<Expr>, Box<Expr>)
+/// #[rust_sitter::prec(1, assoc=left)]
+/// Subtract(Box<Expr>, Box<Expr>)
 /// ```
 pub fn prec(
     _attr: proc_macro::TokenStream,
@@ -129,6 +179,9 @@ pub fn prec(
 /// This annotation takes a single, unnamed parameter, which specifies the precedence level.
 /// This is used to resolve conflicts with other non-terminals, so that the one with the higher
 /// precedence will bind more tightly (appear lower in the parse tree).
+///
+/// This is an alternate syntax for `#[rust_sitter::prec(assoc=left, 1)]`.
+/// Only one such attribute can be specified.
 ///
 /// ## Example
 /// ```ignore
@@ -151,6 +204,9 @@ pub fn prec_left(
 /// This is used to resolve conflicts with other non-terminals, so that the one with the higher
 /// precedence will bind more tightly (appear lower in the parse tree).
 ///
+/// This is an alternate syntax for `#[rust_sitter::prec(assoc=right, 1)]`.
+/// Only one such attribute can be specified.
+/// 
 /// ## Example
 /// ```ignore
 /// #[rust_sitter::prec_right(1)]

@@ -2,7 +2,11 @@ use std::collections::HashSet;
 
 use rust_sitter_common::*;
 use serde_json::{json, Map, Value};
-use syn::{parse::Parse, punctuated::Punctuated, *};
+use syn::{
+    parse::{Parse, ParseStream},
+    punctuated::Punctuated,
+    *,
+};
 
 fn gen_field(
     path: String,
@@ -239,6 +243,51 @@ fn gen_field(
     }
 }
 
+#[derive(Clone, PartialEq)]
+enum AssocParam {
+    Left,
+    Right,
+    Dynamic,
+    None,
+}
+enum PrecArgs {
+    Assoc(AssocParam),
+    Unnamed(Expr),
+    Unknown,
+}
+
+mod kw {
+    syn::custom_keyword!(assoc);
+    syn::custom_keyword!(left);
+    syn::custom_keyword!(right);
+    syn::custom_keyword!(dynamic);
+}
+impl Parse for PrecArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        if input.parse::<kw::left>().is_ok() {
+            return Ok(Self::Assoc(AssocParam::Left));
+        } else if input.parse::<kw::right>().is_ok() {
+            return Ok(Self::Assoc(AssocParam::Right));
+        } else if input.parse::<kw::dynamic>().is_ok() {
+            return Ok(Self::Assoc(AssocParam::Dynamic));
+        } else if input.parse::<kw::assoc>().is_ok() {
+            input.parse::<Token![=]>()?;
+            if input.parse::<kw::left>().is_ok() {
+                return Ok(Self::Assoc(AssocParam::Left));
+            } else if input.parse::<kw::right>().is_ok() {
+                return Ok(Self::Assoc(AssocParam::Right));
+            } else if input.parse::<kw::dynamic>().is_ok() {
+                return Ok(Self::Assoc(AssocParam::Dynamic));
+            }
+            return Ok(Self::Unknown);
+        }
+        if let Ok(expr) = input.parse::<Expr>() {
+            return Ok(Self::Unnamed(expr));
+        }
+        return Ok(Self::Unknown);
+    }
+}
+
 fn gen_struct_or_variant(
     path: String,
     attrs: Vec<Attribute>,
@@ -308,19 +357,67 @@ fn gen_struct_or_variant(
         .iter()
         .find(|attr| attr.path == syn::parse_quote!(rust_sitter::prec));
 
-    let prec_param = prec_attr.and_then(|a| a.parse_args_with(Expr::parse).ok());
-
     let prec_left_attr = attrs
         .iter()
         .find(|attr| attr.path == syn::parse_quote!(rust_sitter::prec_left));
-
-    let prec_left_param = prec_left_attr.and_then(|a| a.parse_args_with(Expr::parse).ok());
 
     let prec_right_attr = attrs
         .iter()
         .find(|attr| attr.path == syn::parse_quote!(rust_sitter::prec_right));
 
-    let prec_right_param = prec_right_attr.and_then(|a| a.parse_args_with(Expr::parse).ok());
+    // allow using either of the attributes equally
+    let (assoc_param, prec_param) = {
+        if let Some(prec_attr) = prec_attr {
+            if prec_left_attr.is_some() || prec_right_attr.is_some() {
+                panic!("there can only be one precedence marker on each non-terminal")
+            };
+
+            let prec_params = prec_attr
+                .parse_args_with(Punctuated::<PrecArgs, Token![,]>::parse_terminated)
+                .ok();
+
+            let assoc_param = prec_params
+                .as_ref()
+                .and_then(|p| {
+                    p.iter().find_map(|param| match param {
+                        PrecArgs::Assoc(assoc) => Some(assoc.clone()),
+                        _ => None,
+                    })
+                })
+                .unwrap_or(AssocParam::None);
+
+            let prec_param = prec_params.as_ref().and_then(|p| {
+                p.iter().find_map(|param| match param {
+                    PrecArgs::Unnamed(expr) => Some(expr.clone()),
+                    _ => None,
+                })
+            });
+
+            if assoc_param == AssocParam::None && prec_param.is_none() {
+                panic!("The prec attribute requires either the associativity or a precedence value to be specified")
+            }
+
+            (assoc_param, prec_param)
+        } else if let Some(prec_left_attr) = prec_left_attr {
+            if prec_right_attr.is_some() {
+                panic!("there can only be one precedence marker on each non-terminal")
+            };
+
+            let prec_left_param = prec_left_attr.parse_args_with(Expr::parse).ok();
+
+            (AssocParam::Left, prec_left_param)
+        } else if let Some(prec_right_attr) = prec_right_attr {
+            let prec_right_param = prec_right_attr.parse_args_with(Expr::parse).ok();
+
+            (AssocParam::Right, prec_right_param)
+        } else {
+            (AssocParam::None, None)
+        }
+    };
+
+    if assoc_param == AssocParam::Dynamic {
+        panic!("Conflict checking not yet implemented");
+    }
 
     let base_rule = match fields {
         Fields::Unit => {
@@ -342,46 +439,45 @@ fn gen_struct_or_variant(
         }),
     };
 
-    let rule = if let Some(Expr::Lit(lit)) = prec_param {
-        if prec_left_attr.is_some() || prec_right_attr.is_some() {
-            panic!("only one of prec, prec_left, and prec_right can be specified");
-        }
-
-        if let Lit::Int(i) = &lit.lit {
-            json!({
-                "type": "PREC",
-                "value": i.base10_parse::<u32>().unwrap(),
-                "content": base_rule
-            })
-        } else {
-            panic!("Expected integer literal for precedence");
-        }
-    } else if let Some(Expr::Lit(lit)) = prec_left_param {
-        if prec_right_attr.is_some() {
-            panic!("only one of prec, prec_left, and prec_right can be specified");
-        }
-
-        if let Lit::Int(i) = &lit.lit {
-            json!({
-                "type": "PREC_LEFT",
-                "value": i.base10_parse::<u32>().unwrap(),
-                "content": base_rule
-            })
-        } else {
-            panic!("Expected integer literal for precedence");
-        }
-    } else if let Some(Expr::Lit(lit)) = prec_right_param {
-        if let Lit::Int(i) = &lit.lit {
-            json!({
-                "type": "PREC_RIGHT",
-                "value": i.base10_parse::<u32>().unwrap(),
-                "content": base_rule
-            })
-        } else {
-            panic!("Expected integer literal for precedence");
-        }
-    } else {
+    let rule = if assoc_param == AssocParam::None && prec_param.is_none() {
         base_rule
+    } else {
+        let rule_typelabel = match assoc_param {
+            AssocParam::Left => "PREC_LEFT",
+            AssocParam::Right => "PREC_RIGHT",
+            AssocParam::Dynamic => "PREC_DYNAMIC",
+            AssocParam::None => "PREC",
+        };
+
+        if let Some(Expr::Lit(lit)) = prec_param {
+            match &lit.lit {
+                Lit::Int(i) => json!({
+                    "type": rule_typelabel,
+                    "value": i.base10_parse::<u32>().unwrap(),
+                    "content": seq_rule
+                }),
+                // tree-sitter accepts strings in the precedence field,
+                // this allows specifying far more complex inter-rule
+                // precedence logic
+                // but it'd require specifying more metadata elsewhere, and more consistency checks
+                // Lit::Str(s) => json!({
+                //     "type": "PREC",
+                //     "value": s.value(),
+                //     "content": seq_rule
+                // }),
+                _ => panic!("Expected integer literal for precedence"),
+            }
+        } else if assoc_param == AssocParam::Dynamic {
+            panic!("For dynamic precedence, a precedence level is required");
+        } else if assoc_param == AssocParam::None {
+            panic!("Expected precedence parameter for the prec attribute");
+        } else {
+            json!({
+                "type": rule_typelabel,
+                "value": 0,
+                "content": seq_rule
+            })
+        }
     };
 
     out.insert(path, rule);
