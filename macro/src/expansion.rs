@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 
 use proc_macro2::Span;
+use proc_macro_error::emit_error;
 use quote::{quote, ToTokens};
 use rust_sitter_common::*;
-use syn::{parse::Parse, punctuated::Punctuated, *};
+use syn::{parse::Parse, punctuated::Punctuated, *, spanned::Spanned};
 
 fn is_sitter_attr(attr: &Attribute) -> bool {
     let ident = &attr.path.segments.iter().next().unwrap().ident;
@@ -32,7 +33,9 @@ fn gen_field(path: String, ident_str: String, leaf: Field, out: &mut Vec<Item>) 
         .attrs
         .iter()
         .find(|attr| attr.path == syn::parse_quote!(rust_sitter::leaf));
-
+    
+    check_for_duplicate_prec_attribute(&leaf.attrs);
+    
     let leaf_params = leaf_attr.and_then(|a| {
         a.parse_args_with(Punctuated::<NameValueExpr, Token![,]>::parse_terminated)
             .ok()
@@ -283,7 +286,7 @@ pub fn expand_grammar(input: ItemMod) -> ItemMod {
             _ => None,
         })
         .expect("Each parser must have the root type annotated with `#[rust_sitter::language]`");
-
+        
     let mut transformed: Vec<Item> = new_contents
         .iter()
         .cloned()
@@ -291,6 +294,8 @@ pub fn expand_grammar(input: ItemMod) -> ItemMod {
             Item::Enum(mut e) => {
                 let mut impl_body = vec![];
                 e.variants.iter().for_each(|v| {
+                    check_for_duplicate_prec_attribute(&v.attrs);
+                    
                     gen_struct_or_variant(
                         format!("{}_{}", e.ident, v.ident),
                         v.fields.clone(),
@@ -352,6 +357,8 @@ pub fn expand_grammar(input: ItemMod) -> ItemMod {
 
             Item::Struct(mut s) => {
                 let mut impl_body = vec![];
+
+                check_for_duplicate_prec_attribute(&s.attrs);
 
                 gen_struct_or_variant(
                     s.ident.to_string(),
@@ -438,4 +445,20 @@ pub fn expand_grammar(input: ItemMod) -> ItemMod {
         content: Some((brace, transformed)),
         semi: input.semi,
     }
+}
+
+fn check_for_duplicate_prec_attribute(attrs: &[Attribute]) {
+    
+    let prec_attrs: Vec<&Attribute> = attrs.iter().filter(|attr| {
+        attr.path == syn::parse_quote!(rust_sitter::prec)
+            || attr.path == syn::parse_quote!(rust_sitter::prec_left)
+            || attr.path == syn::parse_quote!(rust_sitter::prec_right)
+    }).collect();
+
+    if prec_attrs.len() > 1 {
+        for attr in &prec_attrs[1..] {
+            emit_error!(attr.span(), "Only one precedence annotation is allowed at each non-terminal");
+        }
+    }
+    
 }

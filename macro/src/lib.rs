@@ -1,3 +1,4 @@
+use proc_macro_error::proc_macro_error;
 use quote::ToTokens;
 use syn::{parse_macro_input, AttributeArgs, ItemMod};
 
@@ -262,6 +263,7 @@ pub fn repeat(
 /// Mark a module to be analyzed for a Rust Sitter grammar. Takes a single, unnamed argument, which
 /// specifies the name of the grammar. This name must be unique across all Rust Sitter grammars within
 /// a compilation unit.
+#[proc_macro_error]
 #[proc_macro_attribute]
 pub fn grammar(
     attr: proc_macro::TokenStream,
