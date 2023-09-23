@@ -533,6 +533,13 @@ pub fn generate_grammar(module: &ItemMod) -> Value {
         .expect("Each parser must have the root type annotated with `#[rust_sitter::language]`")
         .to_string();
 
+    let has_external_scanner = contents.iter().any(|item| match item {
+        Item::Macro(ItemMacro { ident: None, mac: Macro { path, .. }, .. }) => {
+            path.clone() == syn::parse_quote!(rust_sitter::external_scanner)
+        },
+        _ => false
+    });
+
     // Optionally locate the rule annotated with `#[rust_sitter::word]`.
     let mut word_rule = None;
     contents.iter().for_each(|c| {
@@ -637,11 +644,24 @@ pub fn generate_grammar(module: &ItemMod) -> Value {
         rules_map.get(&root_type).unwrap().clone(),
     );
 
-    json!({
-        "name": grammar_name,
-        "word": word_rule,
-        "rules": rules_map,
-        "extras": extras_list,
-        "externals": externals_list,
-    })
+    if has_external_scanner {
+        externals_list.push(json!({
+            "type": "SYMBOL",
+            "name": "__ERROR_SENTINEL__"
+        }));
+        json!({
+            "name": grammar_name,
+            "word": word_rule,
+            "rules": rules_map,
+            "extras": extras_list,
+            "externals": externals_list,
+        })
+    } else {
+        json!({
+            "name": grammar_name,
+            "word": word_rule,
+            "rules": rules_map,
+            "extras": extras_list,
+        })
+    }
 }

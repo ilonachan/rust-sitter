@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use proc_macro2::Span;
-use proc_macro_error::{emit_error, emit_warning};
+use proc_macro_error::emit_error;
 use quote::{quote, ToTokens};
 use rust_sitter_common::{*, external_scanner::parse_external_tokens_args};
 use syn::{parse::{Parse, ParseStream, Parser}, punctuated::Punctuated, *, spanned::Spanned};
@@ -514,7 +514,7 @@ pub fn expand_grammar(input: ItemMod) -> ItemMod {
         }
     });
 
-    if let Some((scanner_ty, enum_ident, attr)) = extscanner_impl {
+    if let Some((scanner_ty, enum_ident, _attr)) = extscanner_impl {
         let enum_ident = enum_ident.unwrap_or(syn::parse_quote!(ExternalTokens));
         
         let ident_create = Ident::new(&format!("tree_sitter_{grammar_name}_external_scanner_create"), Span::call_site());
