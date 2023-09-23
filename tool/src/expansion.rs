@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use rust_sitter_common::*;
+use rust_sitter_common::{*, external_scanner::parse_external_tokens_args};
 use serde_json::{json, Map, Value};
 use syn::{
     parse::{Parse, ParseStream},
@@ -454,7 +454,7 @@ fn gen_struct_or_variant(
                 Lit::Int(i) => json!({
                     "type": rule_typelabel,
                     "value": i.base10_parse::<u32>().unwrap(),
-                    "content": seq_rule
+                    "content": base_rule
                 }),
                 // tree-sitter accepts strings in the precedence field,
                 // this allows specifying far more complex inter-rule
@@ -475,7 +475,7 @@ fn gen_struct_or_variant(
             json!({
                 "type": rule_typelabel,
                 "value": 0,
-                "content": seq_rule
+                "content": base_rule
             })
         }
     };
@@ -489,6 +489,7 @@ pub fn generate_grammar(module: &ItemMod) -> Value {
     rules_map.insert("source_file".to_string(), json!({}));
 
     let mut extras_list = vec![];
+    let mut externals_list = vec![];
 
     let grammar_name = module
         .attrs
@@ -537,6 +538,13 @@ pub fn generate_grammar(module: &ItemMod) -> Value {
     contents.iter().for_each(|c| {
         let (symbol, attrs) = match c {
             Item::Enum(e) => {
+                if e.attrs
+                    .iter()
+                    .any(|a| a.path == syn::parse_quote!(rust_sitter::skip))
+                {
+                    return;
+                }
+
                 e.variants.iter().for_each(|v| {
                     gen_struct_or_variant(
                         format!("{}_{}", e.ident, v.ident),
@@ -567,13 +575,27 @@ pub fn generate_grammar(module: &ItemMod) -> Value {
             }
 
             Item::Struct(s) => {
-                gen_struct_or_variant(
-                    s.ident.to_string(),
-                    s.attrs.clone(),
-                    s.fields.clone(),
-                    &mut rules_map,
-                    &mut word_rule,
-                );
+                if s.attrs
+                    .iter()
+                    .any(|a| a.path == syn::parse_quote!(rust_sitter::skip))
+                {
+                    return;
+                }
+
+                if s.attrs
+                    .iter()
+                    .any(|a| a.path == syn::parse_quote!(rust_sitter::external_token))
+                {
+                    // TODO: add the necessary stuff for external token fallbacks
+                } else {
+                    gen_struct_or_variant(
+                        s.ident.to_string(),
+                        s.attrs.clone(),
+                        s.fields.clone(),
+                        &mut rules_map,
+                        &mut word_rule,
+                    );
+                }
 
                 (s.ident.to_string(), s.attrs.clone())
             }
@@ -590,6 +612,24 @@ pub fn generate_grammar(module: &ItemMod) -> Value {
                 "name": symbol
             }));
         }
+
+        if let Some(attr) = attrs
+            .iter()
+            .find(|a| a.path == syn::parse_quote!(rust_sitter::external_token))
+        {
+            let text_arg = parse_external_tokens_args(attr);
+            if let Some(text) = text_arg {
+                externals_list.push(json!({
+                    "type": "STRING",
+                    "value": text
+                }));
+            } else {
+                externals_list.push(json!({
+                    "type": "SYMBOL",
+                    "name": symbol
+                }));
+            }
+        }
     });
 
     rules_map.insert(
@@ -601,6 +641,7 @@ pub fn generate_grammar(module: &ItemMod) -> Value {
         "name": grammar_name,
         "word": word_rule,
         "rules": rules_map,
-        "extras": extras_list
+        "extras": extras_list,
+        "externals": externals_list,
     })
 }

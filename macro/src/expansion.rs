@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
 use proc_macro2::Span;
-use proc_macro_error::emit_error;
+use proc_macro_error::{emit_error, emit_warning};
 use quote::{quote, ToTokens};
-use rust_sitter_common::*;
-use syn::{parse::Parse, punctuated::Punctuated, *, spanned::Spanned};
+use rust_sitter_common::{*, external_scanner::parse_external_tokens_args};
+use syn::{parse::{Parse, ParseStream, Parser}, punctuated::Punctuated, *, spanned::Spanned};
 
 fn is_sitter_attr(attr: &Attribute) -> bool {
     let ident = &attr.path.segments.iter().next().unwrap().ident;
@@ -286,112 +286,191 @@ pub fn expand_grammar(input: ItemMod) -> ItemMod {
             _ => None,
         })
         .expect("Each parser must have the root type annotated with `#[rust_sitter::language]`");
-        
+    
+    let extscanner_impl = new_contents.iter().filter_map(|item| match item {
+        Item::Macro(ItemMacro { ident: None, mac, .. }) => {
+            let Macro { path, tokens, .. } = mac;
+             
+            if path.clone() == syn::parse_quote!(rust_sitter::external_scanner) {
+                let tokens: proc_macro::TokenStream = tokens.clone().into();
+                fn parse_input(input: ParseStream) -> syn::Result<(Type,Option<Ident>)> {
+                    let ty: Type = input.parse()?;
+
+                    let id: Option<Ident> = if let Some(_) = input.parse::<Option<Token![,]>>()? {
+                        input.parse()?
+                    } else { None };
+                    let _: Option<Token![,]> = input.parse()?;
+                    if !input.is_empty() {
+                        return Err(input.error("Stream too long"));
+                    }
+                    Ok((ty,id))
+                }
+                
+                match parse_input.parse(tokens) {
+                    Ok((ty,id)) => Some((ty,id,mac.clone())),
+                    Err(err) => {
+                        emit_error!(err.span(), err.to_string());
+                        None
+                    }
+                }
+            } else {
+                None
+            }  
+        },
+        _ => None
+    }).fold(None, |acc, el| {
+        if acc.is_none() {
+            Some(el)
+        } else {
+            emit_error!(el.2, "Only one external scanner can be registered for any grammar");
+            acc
+        }
+    });
+
+    let mut extscanner_tokens = vec![];
+
     let mut transformed: Vec<Item> = new_contents
         .iter()
         .cloned()
         .flat_map(|c| match c {
             Item::Enum(mut e) => {
-                let mut impl_body = vec![];
-                e.variants.iter().for_each(|v| {
-                    check_for_duplicate_prec_attribute(&v.attrs);
-                    
-                    gen_struct_or_variant(
-                        format!("{}_{}", e.ident, v.ident),
-                        v.fields.clone(),
-                        Some(v.ident.clone()),
-                        e.ident.clone(),
-                        v.attrs.clone(),
-                        &mut impl_body,
-                    )
-                });
-
-                let match_cases: Vec<Arm> = e
-                    .variants
-                    .iter()
-                    .map(|v| {
-                        let variant_path = format!("{}_{}", e.ident, v.ident);
-                        let extract_ident =
-                            Ident::new(&format!("extract_{variant_path}"), Span::call_site());
-                        syn::parse_quote! {
-                            #variant_path => return #extract_ident(n, source)
-                        }
-                    })
-                    .collect();
-
-                e.attrs.retain(|a| !is_sitter_attr(a));
-                e.variants.iter_mut().for_each(|v| {
-                    v.attrs.retain(|a| !is_sitter_attr(a));
-                    v.fields.iter_mut().for_each(|f| {
-                        f.attrs.retain(|a| !is_sitter_attr(a));
+                if e.attrs.iter().any(|attr| attr.path == syn::parse_quote!(rust_sitter::skip)) {
+                    vec![Item::Enum(e)]
+                } else {
+                    let mut impl_body = vec![];
+                    e.variants.iter().for_each(|v| {
+                        check_for_duplicate_prec_attribute(&v.attrs);
+                        
+                        gen_struct_or_variant(
+                            format!("{}_{}", e.ident, v.ident),
+                            v.fields.clone(),
+                            Some(v.ident.clone()),
+                            e.ident.clone(),
+                            v.attrs.clone(),
+                            &mut impl_body,
+                        )
                     });
-                });
 
-                let enum_name = &e.ident;
-                let extract_impl: Item = syn::parse_quote! {
-                    impl rust_sitter::Extract<#enum_name> for #enum_name {
-                        type LeafFn = ();
+                    let match_cases: Vec<Arm> = e
+                        .variants
+                        .iter()
+                        .map(|v| {
+                            let variant_path = format!("{}_{}", e.ident, v.ident);
+                            let extract_ident =
+                                Ident::new(&format!("extract_{variant_path}"), Span::call_site());
+                            syn::parse_quote! {
+                                #variant_path => return #extract_ident(n, source)
+                            }
+                        })
+                        .collect();
 
-                        #[allow(non_snake_case)]
-                        fn extract(node: Option<rust_sitter::tree_sitter::Node>, source: &[u8], _last_idx: usize, _leaf_fn: Option<&Self::LeafFn>) -> Self {
-                            let node = node.unwrap();
-                            #(#impl_body)*
+                    e.attrs.retain(|a| !is_sitter_attr(a));
+                    e.variants.iter_mut().for_each(|v| {
+                        v.attrs.retain(|a| !is_sitter_attr(a));
+                        v.fields.iter_mut().for_each(|f| {
+                            f.attrs.retain(|a| !is_sitter_attr(a));
+                        });
+                    });
 
-                            let mut cursor = node.walk();
-                            assert!(cursor.goto_first_child());
-                            loop {
-                                let n = cursor.node();
-                                match n.kind() {
-                                    #(#match_cases),*,
-                                    _ => if !cursor.goto_next_sibling() {
-                                        panic!("Could not find a child corresponding to any enum branch")
+                    let enum_name = &e.ident;
+                    let extract_impl: Item = syn::parse_quote! {
+                        impl rust_sitter::Extract<#enum_name> for #enum_name {
+                            type LeafFn = ();
+
+                            #[allow(non_snake_case)]
+                            fn extract(node: Option<rust_sitter::tree_sitter::Node>, source: &[u8], _last_idx: usize, _leaf_fn: Option<&Self::LeafFn>) -> Self {
+                                let node = node.unwrap();
+                                #(#impl_body)*
+
+                                let mut cursor = node.walk();
+                                assert!(cursor.goto_first_child());
+                                loop {
+                                    let n = cursor.node();
+                                    match n.kind() {
+                                        #(#match_cases),*,
+                                        _ => if !cursor.goto_next_sibling() {
+                                            panic!("Could not find a child corresponding to any enum branch")
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                };
+                    };
 
-                vec![Item::Enum(e), extract_impl]
+                    vec![Item::Enum(e), extract_impl]
+                }
             }
 
             Item::Struct(mut s) => {
-                let mut impl_body = vec![];
-
-                check_for_duplicate_prec_attribute(&s.attrs);
-
-                gen_struct_or_variant(
-                    s.ident.to_string(),
-                    s.fields.clone(),
-                    None,
-                    s.ident.clone(),
-                    s.attrs.clone(),
-                    &mut impl_body,
-                );
-
-                s.attrs.retain(|a| !is_sitter_attr(a));
-                s.fields.iter_mut().for_each(|f| {
-                    f.attrs.retain(|a| !is_sitter_attr(a));
-                });
-
-                let struct_name = &s.ident;
-                let extract_ident =
-                    Ident::new(&format!("extract_{struct_name}"), Span::call_site());
-
-                let extract_impl: Item = syn::parse_quote! {
-                    impl rust_sitter::Extract<#struct_name> for #struct_name {
-                        type LeafFn = ();
-
-                        #[allow(non_snake_case)]
-                        fn extract(node: Option<rust_sitter::tree_sitter::Node>, source: &[u8], last_idx: usize, _leaf_fn: Option<&Self::LeafFn>) -> Self {
-                            let node = node.unwrap();
-                            #(#impl_body)*
-                            #extract_ident(node, source)
+                if s.attrs.iter().any(|attr| attr.path == syn::parse_quote!(rust_sitter::skip)) {
+                    vec![Item::Struct(s)]
+                } else if let Some(attr) = s.attrs.iter().find(|attr| attr.path == syn::parse_quote!(rust_sitter::external_token)) {
+                    if let syn::Fields::Unit = s.fields {
+                        // TODO: relax requirements
+                        extscanner_tokens.push((s.ident.clone(), attr.clone()));
+                        if parse_external_tokens_args(attr).is_some() {
+                            s.attrs.push(syn::parse_quote!(#[allow(dead_code)]))
                         }
-                    }
-                };
 
-                vec![Item::Struct(s), extract_impl]
+                        // TODO: add an impl Extract block, so the node can be used in the tree
+                        // probably reuse logic from the general case
+                        // (this could follow a similar pattern as for standard leaf unit structs)
+                        // let struct_name = &s.ident;
+                        // let extract_impl: Item = syn::parse_quote! {
+                        //     impl rust_sitter::Extract<#struct_name> for #struct_name {
+                        //         type LeafFn = ();
+    
+                        //         #[allow(non_snake_case)]
+                        //         fn extract(node: Option<rust_sitter::tree_sitter::Node>, source: &[u8], last_idx: usize, _leaf_fn: Option<&Self::LeafFn>) -> Self {
+                        //             let node = node.unwrap();
+                        //             #(#impl_body)*
+                        //             #extract_ident(node, source)
+                        //         }
+                        //     }
+                        // };
+                        vec![Item::Struct(s)]
+                    } else {
+                        emit_error!(s.fields, "External tokens can't have associated data, as this could not be populated during parsing.");
+                        vec![Item::Struct(s)]
+                    }
+                } else {
+                    let mut impl_body = vec![];
+
+                    check_for_duplicate_prec_attribute(&s.attrs);
+
+                    gen_struct_or_variant(
+                        s.ident.to_string(),
+                        s.fields.clone(),
+                        None,
+                        s.ident.clone(),
+                        s.attrs.clone(),
+                        &mut impl_body,
+                    );
+
+                    s.attrs.retain(|a| !is_sitter_attr(a));
+                    s.fields.iter_mut().for_each(|f| {
+                        f.attrs.retain(|a| !is_sitter_attr(a));
+                    });
+
+                    let struct_name = &s.ident;
+                    let extract_ident =
+                        Ident::new(&format!("extract_{struct_name}"), Span::call_site());
+
+                    let extract_impl: Item = syn::parse_quote! {
+                        impl rust_sitter::Extract<#struct_name> for #struct_name {
+                            type LeafFn = ();
+
+                            #[allow(non_snake_case)]
+                            fn extract(node: Option<rust_sitter::tree_sitter::Node>, source: &[u8], last_idx: usize, _leaf_fn: Option<&Self::LeafFn>) -> Self {
+                                let node = node.unwrap();
+                                #(#impl_body)*
+                                #extract_ident(node, source)
+                            }
+                        }
+                    };
+
+                    vec![Item::Struct(s), extract_impl]
+                }
             }
 
             o => vec![o],
@@ -413,27 +492,134 @@ pub fn expand_grammar(input: ItemMod) -> ItemMod {
     });
 
     transformed.push(syn::parse_quote! {
-      pub fn parse(input: &str) -> core::result::Result<#root_type, Vec<rust_sitter::errors::ParseError>> {
-          let mut parser = rust_sitter::tree_sitter::Parser::new();
-          parser.set_language(language()).unwrap();
-          let tree = parser.parse(input, None).unwrap();
-          let root_node = tree.root_node();
+        pub fn parse(input: &str) -> core::result::Result<#root_type, Vec<rust_sitter::errors::ParseError>> {
+            let mut parser = rust_sitter::tree_sitter::Parser::new();
+            parser.set_language(language()).unwrap();
+            let tree = parser.parse(input, None).unwrap();
+            let root_node = tree.root_node();
 
-          if root_node.has_error() {
-              let mut errors = vec![];
-              rust_sitter::errors::collect_parsing_errors(
-                  &root_node,
-                  input.as_bytes(),
-                  &mut errors,
-              );
+            if root_node.has_error() {
+                let mut errors = vec![];
+                rust_sitter::errors::collect_parsing_errors(
+                    &root_node,
+                    input.as_bytes(),
+                    &mut errors,
+                );
 
-              Err(errors)
-          } else {
-              use rust_sitter::Extract;
-              Ok(<#root_type as rust_sitter::Extract<_>>::extract(Some(root_node), input.as_bytes(), 0, None))
-          }
-      }
-  });
+                Err(errors)
+            } else {
+                use rust_sitter::Extract;
+                Ok(<#root_type as rust_sitter::Extract<_>>::extract(Some(root_node), input.as_bytes(), 0, None))
+            }
+        }
+    });
+
+    if let Some((scanner_ty, enum_ident, attr)) = extscanner_impl {
+        let enum_ident = enum_ident.unwrap_or(syn::parse_quote!(ExternalTokens));
+        
+        let ident_create = Ident::new(&format!("tree_sitter_{grammar_name}_external_scanner_create"), Span::call_site());
+        let ident_destroy = Ident::new(&format!("tree_sitter_{grammar_name}_external_scanner_destroy"), Span::call_site());
+        let ident_serialize = Ident::new(&format!("tree_sitter_{grammar_name}_external_scanner_serialize"), Span::call_site());
+        let ident_deserialize = Ident::new(&format!("tree_sitter_{grammar_name}_external_scanner_deserialize"), Span::call_site());
+        let ident_scan = Ident::new(&format!("tree_sitter_{grammar_name}_external_scanner_scan"), Span::call_site());
+        
+        
+        transformed.push(syn::parse_quote! {
+            #[no_mangle]
+            extern "C" fn #ident_create() -> *mut libc::c_void {
+                unsafe {rust_sitter::external_scanner::create::<#scanner_ty>()}
+            }
+        });
+        transformed.push(syn::parse_quote! {
+            #[no_mangle]
+            extern "C" fn #ident_destroy(payload: *mut libc::c_void) {
+                unsafe {rust_sitter::external_scanner::destroy::<#scanner_ty>(payload);}
+            }
+        });
+        transformed.push(syn::parse_quote! {
+            #[no_mangle]
+            extern "C" fn #ident_serialize(
+                payload: *mut libc::c_void,
+                buffer: *mut libc::c_char,
+            ) -> libc::c_uint {
+                unsafe {rust_sitter::external_scanner::serialize::<#scanner_ty>(payload, buffer)}
+            }
+        });
+        transformed.push(syn::parse_quote! {
+            #[no_mangle]
+            extern "C" fn #ident_deserialize(
+                payload: *mut libc::c_void,
+                buffer: *const libc::c_char,
+                length: libc::c_uint,
+            ) {
+                unsafe {rust_sitter::external_scanner::deserialize::<#scanner_ty>(payload, buffer, length)}
+            }
+        });
+        transformed.push(syn::parse_quote! {
+            #[no_mangle]
+            extern "C" fn #ident_scan(
+                payload: *mut libc::c_void,
+                lexer: *mut rust_sitter::external_scanner::_TSLexer,
+                valid_symbols: *const bool,
+            ) -> bool {
+                unsafe {rust_sitter::external_scanner::scan::<#scanner_ty>(payload, lexer, valid_symbols)}
+            }
+        });
+        
+
+        let mut enum_variants: Punctuated<Variant, Token![,]> = Punctuated::new();
+        let mut token_list_index_match_arms: Vec<Arm> = vec![];
+        let mut from_index_match_arms: Vec<Arm> = vec![];
+
+
+
+        for (id,(variant, _)) in extscanner_tokens.iter().enumerate() {
+            let id = id as u16;
+            enum_variants.push(Variant{ attrs: vec![], ident: variant.clone(), fields: Fields::Unit, discriminant: None });
+            token_list_index_match_arms.push(syn::parse_quote!{
+                #enum_ident::#variant => #id,
+            });
+            from_index_match_arms.push(syn::parse_quote!{
+                #id => Some(#enum_ident::#variant),
+            });
+        }
+
+        let enum_code: ItemEnum = syn::parse_quote!{
+            pub enum #enum_ident {
+                #enum_variants
+            }
+        };
+        let token_count = extscanner_tokens.len() as u16;
+        // LitInt::new(&extscanner_tokens.len().to_string(), Span::call_site())
+        let impl_code: ItemImpl = syn::parse_quote!{
+            impl rust_sitter::external_scanner::ExternalTokens for #enum_ident {
+                fn token_count() -> u16 {
+                    #token_count
+                }
+            
+                fn token_list_index(&self) -> u16 {
+                    match self {
+                        #(#token_list_index_match_arms)*
+                    }
+                }
+            
+                fn from_index(index: u16) -> Option<Self> {
+                    match index {
+                        #(#from_index_match_arms)*
+                        _ => None
+                    }
+                }
+            }
+        };
+
+        transformed.push(Item::Enum(enum_code));
+        transformed.push(Item::Impl(impl_code));
+        
+    } else if extscanner_tokens.len() > 0 {
+        for (_,attr) in extscanner_tokens {
+            emit_error!(attr, "Can't mark a unit struct as an External Token if no External Scanner is present")
+        }
+    }
 
     let mut filtered_attrs = input.attrs;
     filtered_attrs.retain(|a| !is_sitter_attr(a));

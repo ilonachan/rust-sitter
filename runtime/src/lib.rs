@@ -1,3 +1,5 @@
+pub mod external_scanner;
+
 use std::ops::Deref;
 
 pub use rust_sitter_macro::*;
@@ -105,6 +107,39 @@ impl<T: Extract<U>, U> Extract<Vec<U>> for Vec<T> {
         .unwrap_or_default()
     }
 }
+
+/// A wrapper around a grammar tree structure, which may be returned as such _or_
+/// simply used to match a complex token as a string.
+pub enum LexedToken<L,T=String> {
+    Lexed(L),
+    Token(T),
+}
+
+/// TODO: currently only for the token case
+impl<T: Extract<U>, U> Extract<LexedToken<U,U>> for LexedToken<T,T> {
+    type LeafFn = T::LeafFn;
+    fn extract(
+        node: Option<tree_sitter::Node>,
+        source: &[u8],
+        last_idx: usize,
+        leaf_fn: Option<&Self::LeafFn>,
+    ) -> LexedToken<U,U> {
+        LexedToken::Token(T::extract(node, source, last_idx, leaf_fn))
+    }
+}
+
+// impl<L: Extract<UL>, T: Extract<UT>, UL, UT> Extract<LexedToken<UL,UT>> for LexedToken<L,T> {
+//     type LeafFn = T::LeafFn;
+//     fn extract(
+//         node: Option<tree_sitter::Node>,
+//         source: &[u8],
+//         mut last_idx: usize,
+//         leaf_fn: Option<&Self::LeafFn>,
+//     ) -> Vec<U> {
+//         node.map(|n| T::extract(Some(n), source, last_idx, leaf_fn))
+//     }
+// }
+
 
 #[derive(Clone, Debug)]
 /// A wrapper around a value that also contains the span of the value in the source.

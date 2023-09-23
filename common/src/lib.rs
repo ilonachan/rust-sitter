@@ -1,3 +1,5 @@
+pub mod external_scanner;
+
 use std::collections::HashSet;
 
 use syn::{
