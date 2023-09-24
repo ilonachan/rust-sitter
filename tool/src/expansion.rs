@@ -47,9 +47,7 @@ fn gen_field(
             .map(|p| p.expr.clone())
     });
 
-    let mut skip_over = HashSet::new();
-    skip_over.insert("Spanned");
-    skip_over.insert("Box");
+    let skip_over: HashSet<&'static str> = ["Spanned", "Box"].into_iter().collect();
 
     let (inner_type_vec, is_vec) = try_extract_inner_type(&leaf_type, "Vec", &skip_over);
     let (inner_type_option, is_option) = try_extract_inner_type(&leaf_type, "Option", &skip_over);
@@ -562,14 +560,13 @@ pub fn generate_grammar(module: &ItemMod) -> Value {
                     )
                 });
 
-                let mut members: Vec<Value> = vec![];
-                e.variants.iter().for_each(|v| {
+                let members: Vec<Value> = e.variants.iter().map(|v| {
                     let variant_path = format!("{}_{}", e.ident.clone(), v.ident);
-                    members.push(json!({
+                    json!({
                         "type": "SYMBOL",
                         "name": variant_path
-                    }))
-                });
+                    })
+                }).collect();
 
                 let rule = json!({
                     "type": "CHOICE",

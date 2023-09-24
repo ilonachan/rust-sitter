@@ -47,19 +47,11 @@ fn gen_field(path: String, ident_str: String, leaf: Field, out: &mut Vec<Item>) 
             .map(|p| p.expr.clone())
     });
 
-    let mut skip_over = HashSet::new();
-    skip_over.insert("Spanned");
-    skip_over.insert("Box");
+    let non_leaf: HashSet<&'static str> = ["Spanned", "Box", "Option", "Vec"].into_iter().collect();
 
     let (leaf_stmts, leaf_expr): (Vec<Stmt>, Expr) = match transform_param {
         Some(closure) => {
-            let mut non_leaf = HashSet::new();
-            non_leaf.insert("Spanned");
-            non_leaf.insert("Box");
-            non_leaf.insert("Option");
-            non_leaf.insert("Vec");
             let wrapped_leaf_type = wrap_leaf_type(&leaf_type, &non_leaf);
-
             (
                 vec![],
                 syn::parse_quote!(<#wrapped_leaf_type as rust_sitter::Extract<_>>::extract(node, source, *last_idx, Some(&#closure))),
@@ -121,7 +113,9 @@ fn gen_struct_or_variant(
     container_attrs: Vec<Attribute>,
     out: &mut Vec<Item>,
 ) {
-    if fields == Fields::Unit {
+    let extract_ident = Ident::new(&format!("extract_{path}"), Span::call_site());
+
+    let children_parsed = if fields == Fields::Unit {
         let dummy_field = Field {
             attrs: container_attrs,
             vis: Visibility::Inherited,
@@ -130,37 +124,9 @@ fn gen_struct_or_variant(
             ty: Type::Verbatim(quote!(())), // unit type.
         };
         gen_field(format!("{path}_unit"), "unit".to_owned(), dummy_field, out);
+        vec![]
     } else {
-        fields.iter().enumerate().for_each(|(i, field)| {
-            let ident_str = field
-                .ident
-                .as_ref()
-                .map(|v| v.to_string())
-                .unwrap_or(format!("{i}"));
-
-            if !field
-                .attrs
-                .iter()
-                .any(|attr| attr.path == syn::parse_quote!(rust_sitter::skip))
-            {
-                gen_field(
-                    format!("{}_{}", path, ident_str),
-                    ident_str,
-                    field.clone(),
-                    out,
-                );
-            }
-        });
-    }
-
-    let extract_ident = Ident::new(&format!("extract_{path}"), Span::call_site());
-
-    let mut have_named_field = false;
-
-    let children_parsed = fields
-        .iter()
-        .enumerate()
-        .map(|(i, field)| {
+        fields.iter().enumerate().map(|(i, field)| {
             let expr = if let Some(skip_attrs) = field
                 .attrs
                 .iter()
@@ -176,6 +142,13 @@ fn gen_struct_or_variant(
 
                 let ident = Ident::new(&format!("extract_{path}_{ident_str}"), Span::call_site());
 
+                gen_field(
+                    format!("{}_{}", path, ident_str),
+                    ident_str,
+                    field.clone(),
+                    out,
+                );
+
                 syn::parse_quote! {
                     #ident(&mut cursor, source, &mut last_idx)
                 }
@@ -185,7 +158,6 @@ fn gen_struct_or_variant(
                 ParamOrField::Param(expr)
             } else {
                 let field_name = field.ident.as_ref().unwrap();
-                have_named_field = true;
                 ParamOrField::Field(FieldValue {
                     attrs: vec![],
                     member: Member::Named(field_name.clone()),
@@ -194,7 +166,8 @@ fn gen_struct_or_variant(
                 })
             }
         })
-        .collect::<Vec<ParamOrField>>();
+        .collect::<Vec<ParamOrField>>()
+    };
 
     let construct_name = match variant_ident {
         Some(ident) => quote! {
