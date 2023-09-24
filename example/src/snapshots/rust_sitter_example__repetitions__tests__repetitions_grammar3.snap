@@ -1,16 +1,19 @@
 ---
 source: example/src/repetitions.rs
-expression: "grammar3::parse(\"\")"
+expression: "grammar3::parse(\"\", None)"
 ---
 Ok(
-    NumberList {
-        numbers: Spanned {
-            value: [],
-            span: (
-                0,
-                0,
-            ),
+    (
+        NumberList {
+            numbers: Spanned {
+                value: [],
+                span: (
+                    0,
+                    0,
+                ),
+            },
+            metadata: 123,
         },
-        metadata: 123,
-    },
+        EditTree,
+    ),
 )

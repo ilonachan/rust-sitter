@@ -72,8 +72,8 @@ fn main() {
             break;
         }
 
-        match arithmetic::grammar::parse(input) {
-            Ok(expr) => println!("{expr:?}"),
+        match arithmetic::grammar::parse(input, None) {
+            Ok((expr, _)) => println!("{expr:?}"),
             Err(errs) => {
                 let mut codemap = CodeMap::new();
                 let file_span = codemap.add_file("<input>".to_string(), input.to_string());

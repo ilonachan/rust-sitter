@@ -383,7 +383,7 @@ pub fn expand_grammar(input: ItemMod) -> ItemMod {
                                 #(#impl_body)*
 
                                 let mut cursor = node.walk();
-                                assert!(cursor.goto_first_child());
+                                assert!(cursor.goto_first_child(), "Could not find a child corresponding to any enum branch");
                                 loop {
                                     let n = cursor.node();
                                     match n.kind() {
@@ -492,10 +492,16 @@ pub fn expand_grammar(input: ItemMod) -> ItemMod {
     });
 
     transformed.push(syn::parse_quote! {
-        pub fn parse(input: &str) -> core::result::Result<#root_type, Vec<rust_sitter::errors::ParseError>> {
+        /// Parse an input string according to the grammar. Returns either any parsing errors that happened,
+        /// or an [`#root_type`] instance containing the parsed structured data. Along with that, also returns
+        /// a handle of the parsed edit tree, which can be passed to subsequent parse calls and allows taking
+        /// advantage of tree-sitter's edit functionality to speed up workflows with live changes in the input text.
+        /// TODO: make this doc comment appear for the user
+        pub fn parse(input: &str, edit_tree: Option<&rust_sitter::EditTree<#root_type>>) -> core::result::Result<(#root_type, rust_sitter::EditTree<#root_type>), Vec<rust_sitter::errors::ParseError>> {
             let mut parser = rust_sitter::tree_sitter::Parser::new();
             parser.set_language(language()).unwrap();
-            let tree = parser.parse(input, None).unwrap();
+            let old_tree = edit_tree.map(|et| et.get().clone());
+            let tree = parser.parse(input, old_tree.as_ref()).unwrap();
             let root_node = tree.root_node();
 
             if root_node.has_error() {
@@ -509,7 +515,7 @@ pub fn expand_grammar(input: ItemMod) -> ItemMod {
                 Err(errors)
             } else {
                 use rust_sitter::Extract;
-                Ok(<#root_type as rust_sitter::Extract<_>>::extract(Some(root_node), input.as_bytes(), 0, None))
+                Ok((<#root_type as rust_sitter::Extract<_>>::extract(Some(root_node), input.as_bytes(), 0, None), rust_sitter::EditTree::new(tree)))
             }
         }
     });

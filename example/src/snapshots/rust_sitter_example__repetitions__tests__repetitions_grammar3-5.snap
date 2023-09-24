@@ -1,35 +1,38 @@
 ---
 source: example/src/repetitions.rs
-expression: "grammar3::parse(\"1,, 2,\")"
+expression: "grammar3::parse(\"1,, 2,\", None)"
 ---
 Ok(
-    NumberList {
-        numbers: Spanned {
-            value: [
-                Spanned {
-                    value: Some(
-                        1,
-                    ),
-                    span: (
-                        0,
-                        1,
-                    ),
-                },
-                Spanned {
-                    value: Some(
-                        2,
-                    ),
-                    span: (
-                        4,
-                        5,
-                    ),
-                },
-            ],
-            span: (
-                0,
-                6,
-            ),
+    (
+        NumberList {
+            numbers: Spanned {
+                value: [
+                    Spanned {
+                        value: Some(
+                            1,
+                        ),
+                        span: (
+                            0,
+                            1,
+                        ),
+                    },
+                    Spanned {
+                        value: Some(
+                            2,
+                        ),
+                        span: (
+                            4,
+                            5,
+                        ),
+                    },
+                ],
+                span: (
+                    0,
+                    6,
+                ),
+            },
+            metadata: 123,
         },
-        metadata: 123,
-    },
+        EditTree,
+    ),
 )

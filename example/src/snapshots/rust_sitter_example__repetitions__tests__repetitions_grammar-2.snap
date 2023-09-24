@@ -1,23 +1,26 @@
 ---
 source: example/src/repetitions.rs
-expression: "grammar::parse(\"1\")"
+expression: "grammar::parse(\"1\", None)"
 ---
 Ok(
-    NumberList {
-        numbers: Spanned {
-            value: [
-                Spanned {
-                    value: 1,
-                    span: (
-                        0,
-                        1,
-                    ),
-                },
-            ],
-            span: (
-                0,
-                1,
-            ),
+    (
+        NumberList {
+            numbers: Spanned {
+                value: [
+                    Spanned {
+                        value: 1,
+                        span: (
+                            0,
+                            1,
+                        ),
+                    },
+                ],
+                span: (
+                    0,
+                    1,
+                ),
+            },
         },
-    },
+        EditTree,
+    ),
 )

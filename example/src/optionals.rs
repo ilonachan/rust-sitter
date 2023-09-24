@@ -28,13 +28,13 @@ mod tests {
 
     #[test]
     fn optional_grammar() {
-        insta::assert_debug_snapshot!(grammar::parse("_"));
-        insta::assert_debug_snapshot!(grammar::parse("_."));
-        insta::assert_debug_snapshot!(grammar::parse("1_"));
-        insta::assert_debug_snapshot!(grammar::parse("1_."));
-        insta::assert_debug_snapshot!(grammar::parse("1_2"));
-        insta::assert_debug_snapshot!(grammar::parse("1_2."));
-        insta::assert_debug_snapshot!(grammar::parse("_2"));
-        insta::assert_debug_snapshot!(grammar::parse("_2."));
+        insta::assert_debug_snapshot!(grammar::parse("_", None));
+        insta::assert_debug_snapshot!(grammar::parse("_.", None));
+        insta::assert_debug_snapshot!(grammar::parse("1_", None));
+        insta::assert_debug_snapshot!(grammar::parse("1_.", None));
+        insta::assert_debug_snapshot!(grammar::parse("1_2", None));
+        insta::assert_debug_snapshot!(grammar::parse("1_2.", None));
+        insta::assert_debug_snapshot!(grammar::parse("_2", None));
+        insta::assert_debug_snapshot!(grammar::parse("_2.", None));
     }
 }

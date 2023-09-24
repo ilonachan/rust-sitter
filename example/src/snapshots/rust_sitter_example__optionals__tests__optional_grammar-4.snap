@@ -1,22 +1,25 @@
 ---
 source: example/src/optionals.rs
-expression: "grammar::parse(\"1_.\")"
+expression: "grammar::parse(\"1_.\", None)"
 ---
 Ok(
-    Language {
-        v: Some(
-            1,
-        ),
-        _s: (),
-        t: Spanned {
-            value: None,
-            span: (
-                2,
-                2,
+    (
+        Language {
+            v: Some(
+                1,
+            ),
+            _s: (),
+            t: Spanned {
+                value: None,
+                span: (
+                    2,
+                    2,
+                ),
+            },
+            _d: Some(
+                (),
             ),
         },
-        _d: Some(
-            (),
-        ),
-    },
+        EditTree,
+    ),
 )

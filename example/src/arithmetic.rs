@@ -33,12 +33,12 @@ mod tests {
     #[wasm_bindgen_test::wasm_bindgen_test]
     #[test]
     fn successful_parses() {
-        assert_eq!(grammar::parse("1").unwrap(), Expression::Number(1));
+        assert_eq!(grammar::parse("1", None).unwrap().0, Expression::Number(1));
 
-        assert_eq!(grammar::parse(" 1").unwrap(), Expression::Number(1));
+        assert_eq!(grammar::parse(" 1", None).unwrap().0, Expression::Number(1));
 
         assert_eq!(
-            grammar::parse("1 - 2").unwrap(),
+            grammar::parse("1 - 2", None).unwrap().0,
             Expression::Sub(
                 Box::new(Expression::Number(1)),
                 (),
@@ -47,7 +47,7 @@ mod tests {
         );
 
         assert_eq!(
-            grammar::parse("1 - 2 - 3").unwrap(),
+            grammar::parse("1 - 2 - 3", None).unwrap().0,
             Expression::Sub(
                 Box::new(Expression::Sub(
                     Box::new(Expression::Number(1)),
@@ -60,7 +60,7 @@ mod tests {
         );
 
         assert_eq!(
-            grammar::parse("1 - 2 * 3").unwrap(),
+            grammar::parse("1 - 2 * 3", None).unwrap().0,
             Expression::Sub(
                 Box::new(Expression::Number(1)),
                 (),
@@ -73,7 +73,7 @@ mod tests {
         );
 
         assert_eq!(
-            grammar::parse("1 * 2 * 3").unwrap(),
+            grammar::parse("1 * 2 * 3", None).unwrap().0,
             Expression::Mul(
                 Box::new(Expression::Mul(
                     Box::new(Expression::Number(1)),
@@ -86,7 +86,7 @@ mod tests {
         );
 
         assert_eq!(
-            grammar::parse("1 * 2 - 3").unwrap(),
+            grammar::parse("1 * 2 - 3", None).unwrap().0,
             Expression::Sub(
                 Box::new(Expression::Mul(
                     Box::new(Expression::Number(1)),
@@ -101,9 +101,9 @@ mod tests {
 
     #[test]
     fn failed_parses() {
-        insta::assert_debug_snapshot!(grammar::parse("1 + 2"));
-        insta::assert_debug_snapshot!(grammar::parse("1 - 2 -"));
-        insta::assert_debug_snapshot!(grammar::parse("a1"));
-        insta::assert_debug_snapshot!(grammar::parse("1a"));
+        insta::assert_debug_snapshot!(grammar::parse("1 + 2", None));
+        insta::assert_debug_snapshot!(grammar::parse("1 - 2 -", None));
+        insta::assert_debug_snapshot!(grammar::parse("a1", None));
+        insta::assert_debug_snapshot!(grammar::parse("1a", None));
     }
 }

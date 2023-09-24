@@ -1,24 +1,27 @@
 ---
 source: example/src/optionals.rs
-expression: "grammar::parse(\"1_2\")"
+expression: "grammar::parse(\"1_2\", None)"
 ---
 Ok(
-    Language {
-        v: Some(
-            1,
-        ),
-        _s: (),
-        t: Spanned {
-            value: Some(
-                Number {
-                    v: 2,
-                },
+    (
+        Language {
+            v: Some(
+                1,
             ),
-            span: (
-                2,
-                3,
-            ),
+            _s: (),
+            t: Spanned {
+                value: Some(
+                    Number {
+                        v: 2,
+                    },
+                ),
+                span: (
+                    2,
+                    3,
+                ),
+            },
+            _d: None,
         },
-        _d: None,
-    },
+        EditTree,
+    ),
 )

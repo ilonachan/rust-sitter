@@ -176,6 +176,27 @@ impl<T: Extract<U>, U> Extract<Spanned<U>> for Spanned<T> {
     }
 }
 
+pub struct EditTree<T> {
+    tree: tree_sitter::Tree,
+    ph: PhantomData<T>
+}
+impl<T> EditTree<T> {
+    pub fn new(tree: tree_sitter::Tree) -> Self {
+        Self { tree, ph: PhantomData }        
+    }
+    pub fn get(&self) -> &tree_sitter::Tree {
+        &self.tree
+    }
+    pub fn edit(&mut self, edit: &tree_sitter::InputEdit) {
+        self.tree.edit(edit)
+    }
+}
+impl<T> std::fmt::Debug for EditTree<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EditTree")/* .field("tree", &self.tree) */.finish()
+    }
+}
+
 pub mod errors {
     #[cfg(feature = "tree-sitter-standard")]
     use tree_sitter_runtime_standard as tree_sitter;

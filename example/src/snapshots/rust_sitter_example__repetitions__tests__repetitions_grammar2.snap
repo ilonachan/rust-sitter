@@ -1,15 +1,18 @@
 ---
 source: example/src/repetitions.rs
-expression: "grammar2::parse(\"\")"
+expression: "grammar2::parse(\"\", None)"
 ---
 Ok(
-    NumberList {
-        numbers: Spanned {
-            value: [],
-            span: (
-                0,
-                0,
-            ),
+    (
+        NumberList {
+            numbers: Spanned {
+                value: [],
+                span: (
+                    0,
+                    0,
+                ),
+            },
         },
-    },
+        EditTree,
+    ),
 )

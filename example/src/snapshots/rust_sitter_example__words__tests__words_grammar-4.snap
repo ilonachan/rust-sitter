@@ -1,10 +1,13 @@
 ---
 source: example/src/words.rs
-expression: "grammar::parse(\"if hello\")"
+expression: "grammar::parse(\"if hello\", None)"
 ---
 Ok(
-    Words {
-        _keyword: (),
-        _word: "hello",
-    },
+    (
+        Words {
+            _keyword: (),
+            _word: "hello",
+        },
+        EditTree,
+    ),
 )

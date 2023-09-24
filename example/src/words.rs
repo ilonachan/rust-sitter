@@ -23,9 +23,9 @@ mod tests {
 
     #[test]
     fn words_grammar() {
-        insta::assert_debug_snapshot!(grammar::parse("if"));
-        insta::assert_debug_snapshot!(grammar::parse("hello"));
-        insta::assert_debug_snapshot!(grammar::parse("ifhello"));
-        insta::assert_debug_snapshot!(grammar::parse("if hello"));
+        insta::assert_debug_snapshot!(grammar::parse("if", None));
+        insta::assert_debug_snapshot!(grammar::parse("hello", None));
+        insta::assert_debug_snapshot!(grammar::parse("ifhello", None));
+        insta::assert_debug_snapshot!(grammar::parse("if hello", None));
     }
 }

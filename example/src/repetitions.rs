@@ -72,24 +72,24 @@ mod tests {
 
     #[test]
     fn repetitions_grammar() {
-        insta::assert_debug_snapshot!(grammar::parse(""));
-        insta::assert_debug_snapshot!(grammar::parse("1"));
-        insta::assert_debug_snapshot!(grammar::parse("1, 2"));
+        insta::assert_debug_snapshot!(grammar::parse("", None));
+        insta::assert_debug_snapshot!(grammar::parse("1", None));
+        insta::assert_debug_snapshot!(grammar::parse("1, 2", None));
     }
 
     #[test]
     fn repetitions_grammar2() {
-        insta::assert_debug_snapshot!(grammar2::parse(""));
-        insta::assert_debug_snapshot!(grammar2::parse("1"));
-        insta::assert_debug_snapshot!(grammar2::parse("1 2"));
+        insta::assert_debug_snapshot!(grammar2::parse("", None));
+        insta::assert_debug_snapshot!(grammar2::parse("1", None));
+        insta::assert_debug_snapshot!(grammar2::parse("1 2", None));
     }
 
     #[test]
     fn repetitions_grammar3() {
-        insta::assert_debug_snapshot!(grammar3::parse(""));
-        insta::assert_debug_snapshot!(grammar3::parse("1,"));
-        insta::assert_debug_snapshot!(grammar3::parse("1, 2"));
-        insta::assert_debug_snapshot!(grammar3::parse("1,, 2"));
-        insta::assert_debug_snapshot!(grammar3::parse("1,, 2,"));
+        insta::assert_debug_snapshot!(grammar3::parse("", None));
+        insta::assert_debug_snapshot!(grammar3::parse("1,", None));
+        insta::assert_debug_snapshot!(grammar3::parse("1, 2", None));
+        insta::assert_debug_snapshot!(grammar3::parse("1,, 2", None));
+        insta::assert_debug_snapshot!(grammar3::parse("1,, 2,", None));
     }
 }
