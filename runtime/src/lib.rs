@@ -178,11 +178,11 @@ impl<T: Extract<U>, U> Extract<Spanned<U>> for Spanned<T> {
 
 pub struct EditTree<T> {
     tree: tree_sitter::Tree,
-    ph: PhantomData<T>
+    ph: std::marker::PhantomData<T>
 }
 impl<T> EditTree<T> {
     pub fn new(tree: tree_sitter::Tree) -> Self {
-        Self { tree, ph: PhantomData }        
+        Self { tree, ph: std::marker::PhantomData }        
     }
     pub fn get(&self) -> &tree_sitter::Tree {
         &self.tree
